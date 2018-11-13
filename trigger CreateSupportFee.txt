@@ -1,0 +1,111 @@
+trigger CreateSupportFee on Incoming_Funds__c (before insert) {
+    
+    String PE = 'Perpetual Endowment Pledge';     
+    String TE = 'Term Endowment Pledge';
+    String FT = 'Flow Through Pledge';        
+    String FundType;
+    Decimal FTAmount;
+    Decimal FTFeeAmount;
+    Boolean Waived;
+    
+    for(Incoming_Funds__c vif : Trigger.new)
+    {
+        if(vif.RecordTypeId == [Select Id From RecordType
+                                Where RecordType.Name ='Donations' and SobjectType ='Incoming_Funds__c'
+                                limit 1].Id)
+        {   
+            Outgoing_Funds__c vof = new Outgoing_Funds__c();
+            vof.RecordTypeId = [Select Id From RecordType
+                                Where RecordType.Name ='Support Fees' and SobjectType ='Outgoing_Funds__c'
+                                limit 1].Id;
+            Waived = [Select Waived__c From Donor_Fund__c
+                      Where Donor_Fund__c.Id = :vif.Donor_Fund__c].Waived__c;
+            vof.Donor_Funds__c = vif.Donor_Fund__c;
+            vof.Donor_Org_Indiv__c = vif.Donor_Org_Indiv__c; 
+            FundType = [Select RecordType.Name From Donor_Fund__c
+                        where Donor_Fund__c.Id = :vif.Donor_Fund__c].RecordType.Name;
+            if(FundType == PE || FundType == TE)
+            {
+                if(vif.fee_source__c == 'Paid Separately')
+                {       
+                    vof.Recommended_Fee__c = vif.Received_Amount__c / 0.995 * 0.005;
+                    vof.Actual_Fee__c = vof.Recommended_Fee__c;
+                    vif.Status__c = 'received';
+                    if(Waived == false)
+                    {
+                        vof.Payment_Status__c = 'Unpaid';
+                        vof.Support_Fee_Status__c = 'Approved';
+                    }                            
+                    insert vof;
+                }
+                else if(vif.fee_source__c == 'From Donation')
+                {
+                    vof.Recommended_Fee__c = vif.Received_Amount__c * 0.005;
+                    vof.Actual_Fee__c = vof.Recommended_Fee__c;        
+                    //vif.Received_Amount__c = vif.Received_Amount__c - vof.Actual_Fee__c;
+                    vif.Status__c = 'received';
+                    if(Waived == false)
+                    {
+                        vof.Payment_Status__c = 'Paid';
+                        vof.Support_Fee_Status__c = 'Approved';
+                    }
+                    insert vof;
+                }
+            }
+            else if(FundType == FT)
+            {            
+                FTAmount = vif.Received_Amount__c;
+                if(FTAmount <= 300000)
+                {
+                    FTFeeAmount = 300000 * 0.03;
+                }
+                else
+                {
+                    FTFeeAmount = 300000 * 0.03;
+                    FTAmount = FTAmount - 300000;
+                    if(FTAmount <= 200000)
+                    {
+                        FTFeeAmount = FTFeeAmount + (200000 * 0.02);
+                    }
+                    else
+                    {
+                        FTFeeAmount = FTFeeAmount + (200000 * 0.02);
+                        FTAmount = FTAmount - 200000;
+                    
+                        FTFeeAmount = FTFeeAmount + (FTAmount * 0.01);                    
+                    }
+                }
+                
+                if(vif.fee_source__c == 'Paid Separately')
+                {       
+                    vof.Recommended_Fee__c = FTFeeAmount;
+                    vof.Actual_Fee__c = FTFeeAmount;
+                    vif.Status__c = 'received';
+                    if(Waived == false)
+                    {
+                        vof.Payment_Status__c = 'Unpaid';
+                        vof.Support_Fee_Status__c = 'Approved';
+                    }
+                    insert vof;
+                }
+                else if(vif.fee_source__c == 'From Donation')
+                {
+                    vof.Recommended_Fee__c = FTFeeAmount;
+                    vof.Actual_Fee__c = FTFeeAmount;
+                    vif.Status__c = 'received';
+                    if(Waived == false)
+                    {
+                        vof.Payment_Status__c = 'Paid';
+                        vof.Support_Fee_Status__c = 'Approved';
+                    }
+                    insert vof;
+                }            
+                
+            }
+            vif.Support_Fee__c = [Select Id From Outgoing_Funds__c
+                                  Where Donor_Funds__c = :vif.Donor_Fund__c
+                                  Order By Id Desc Limit 1].Id;
+        }
+            
+    }    
+}

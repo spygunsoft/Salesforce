@@ -1,0 +1,41 @@
+global with sharing class IncomingFundUtilities{
+
+    webservice static String deleteIncomingFund(Id incoming){
+        
+        Incoming_Funds__c vif = [Select Status__c From Incoming_Funds__c 
+                                 Where Id = :incoming Limit 1];
+
+        
+        vif.Status__c = 'Cancelled';
+        update vif;
+        
+        return 'Incoming Fund Cancelled';
+    }
+    
+    webservice static String sendThankEmail(Id incoming){
+        
+        String contactEmail = [Select Contact_Email__c From Incoming_Funds__c 
+                                 Where Id = :incoming Limit 1].Contact_Email__c;
+        
+        if(!String.isEmpty(contactEmail))
+        {
+            String body = 'Thank you for the donation';
+            
+            String[] emailList = new String[]{contactEmail};
+            
+            Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+            email.setSubject('Thank You Letter');
+            email.setToAddresses(emailList);
+            email.setHtmlBody(body);
+            
+            Messaging.sendEmail(new Messaging.SingleEmailMessage[] {email});
+            
+            return 'Thanks Letter Sent';
+        }
+        else
+        {
+            return 'Donor doesn\'t have an email';
+        }    
+    }
+
+}

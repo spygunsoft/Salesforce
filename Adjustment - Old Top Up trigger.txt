@@ -1,0 +1,655 @@
+/*
+top up amount will be divided into TD or/and NTD based on Grantee Organisation's IPC status
+if IPC status is valid, top up will reduce amount from Available for Use TD first and if Available for Use TD is not enough, it will reduce amount from Available for Use NTD
+if IPC status is not valid, top up will reduce amount from Available for Use NTD
+top up also adding into approved amount in Donor Fund
+*/
+
+
+trigger TopupProcess on Adjustment_Transfer__c (before insert, before update) {
+    RecordType TopUp = [Select Id From RecordType
+                                Where RecordType.Name ='Top-up' and SobjectType ='Adjustment_Transfer__c'
+                                limit 1];
+    for(Adjustment_Transfer__c vat: Trigger.new)
+    {
+        Adjustment_Transfer__c oldvat;
+        
+        if(Trigger.isUpdate)
+        {
+            oldvat = Trigger.oldMap.get(vat.Id);
+            
+        }
+        else if(Trigger.isInsert)
+        {
+            oldvat = new Adjustment_Transfer__c();
+        }
+    
+        if(vat.RecordTypeId ==  TopUp.Id)
+        {  
+            /*Outgoing_Funds__c vof = [Select Programme__c,Grantee_Organisation__c,Amount__c,
+                                     VO_Amount_TD__c, VO_Amount_NTD__c,
+                                     Updated_Approved_Amt_TD__c,Updated_Approved_Amt_NTD__c,
+                                     Status__c,Donor_Funds__c,Tax_Deductible_Donation__c, Number_of_Disbursements__c
+                                     From Outgoing_Funds__c
+                                     Where Id = :vat.OF_No__c];
+            
+            if(vof.VO_Amount_TD__c == null){vof.VO_Amount_TD__c = 0;}
+            if(vof.VO_Amount_NTD__c == null){vof.VO_Amount_NTD__c = 0;}
+            if(vof.Number_of_Disbursements__c == null){vof.Number_of_Disbursements__c = 0;}
+           
+            vat.Programme__c = vof.Programme__c;
+            vat.Grantee_Organization__c = vof.Grantee_Organisation__c;
+            vat.Grant_Amount__c = vof.Amount__c;
+            vat.Pledge_Name__c = vof.Donor_Funds__c;
+            vat.Transfer_Amount__c = vat.Top_up_Amount__c;
+            //vat.Tax_Deductible__c = vof.Tax_Deductible_Donation__c; 
+            */
+            
+                                
+                                          
+            Donor_Fund__c vdf = [Select Hold_Amount_TD__c, Hold_Amount_NTD__c, RecordType.Name,
+                                 Avail_for_Use_FT_NTD__c, Avail_for_Use_FT_TD__c,
+                                 Avail_for_Use_PE_NTD__c,Avail_for_Use_PE_TD__c,
+                                 Avail_for_Use_TE_NTD__c,Avail_for_Use_TE_TD__c,
+                                 Committed_Amount__c,Committed_Amount_NTD__c,
+                                 Grant_Top_Up_TD__c, Grant_Top_Up_NTD__c 
+                                 From Donor_Fund__c
+                                 Where Donor_Fund__c.Id = :vat.Pledge_Name__c];
+                                 
+            /*String IPCStatus = [Select IPC_Status__c 
+                                From Account 
+                                Where Id = :vat.Grantee_Organization__c limit 1].IPC_Status__c;    
+            */                                    
+            if(vdf.Hold_Amount_TD__c == null){vdf.Hold_Amount_TD__c = 0;}
+            if(vdf.Hold_Amount_NTD__c == null){vdf.Hold_Amount_NTD__c = 0;}
+            if(vdf.Committed_Amount__c == null){vdf.Committed_Amount__c = 0;}
+            if(vdf.Committed_Amount_NTD__c == null){vdf.Committed_Amount_NTD__c = 0;}
+            if(vat.Old_Value_TD__c == null){vat.Old_Value_TD__c = 0;}
+            if(vat.Old_Value_NTD__c == null){vat.Old_Value_NTD__c = 0;}
+            if(vdf.Grant_Top_Up_TD__c == null){vdf.Grant_Top_Up_TD__c = 0;}
+            if(vdf.Grant_Top_Up_NTD__c == null){vdf.Grant_Top_Up_NTD__c = 0;}
+            vat.Transfer_Amount__c = vat.Top_up_Amount__c;
+            /*if(!(vof.Status__c == 'Approved' || vof.Status__c == 'Partially Disbursed' || vof.Status__c == 'Fully Disbursed' || vof.Status__c == 'Pending Top-up Approval'))
+                {
+                    vat.addError('Grant is not Approved');
+                }
+            */
+            if(vat.Transfer_Status__c == 'Draft' && oldvat.Transfer_Status__c == null )
+            {
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                /*    if(IPCStatus == 'Valid')
+                    {
+                        if(vdf.Avail_for_Use_FT_TD__c + vdf.Avail_for_Use_FT_NTD__c <  vat.Transfer_Amount__c)
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = true;
+                                        
+                    }
+                    else
+                    {
+                        if(vdf.Avail_for_Use_FT_NTD__c < vat.Transfer_Amount__c)
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = false;                        
+                    }
+                    
+                    */
+                                
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        if(vdf.Avail_for_Use_PE_TD__c + vdf.Avail_for_Use_PE_NTD__c <  vat.Top_up_Amount__c )
+                        {
+                            //vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = true;
+                        //vat.Old_Value_TD__c = vat.Top_up_Amount__c ;              
+                    }
+                    else
+                    {
+                        if(vdf.Avail_for_Use_PE_NTD__c < vat.Top_up_Amount__c )
+                        {
+                            //vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = false;
+                        //vat.Old_Value_NTD__c = vat.Top_up_Amount__c ;
+                    }
+                    
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        if(vdf.Avail_for_Use_TE_TD__c + vdf.Avail_for_Use_TE_NTD__c <  vat.Top_up_Amount__c )
+                        {
+                            //vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = true;
+                        // vat.Old_Value_TD__c = vat.Top_up_Amount__c ;               
+                    }
+                    else
+                    {
+                        if(vdf.Avail_for_Use_TE_NTD__c < vat.Top_up_Amount__c )
+                        {
+                            //vat.addError('Available for Use is not enough');
+                        }
+                        vat.Tax_Deductible__c = false;
+                        //vat.Old_Value_NTD__c = vat.Top_up_Amount__c ;
+                    }                   
+                    
+                
+                }
+                
+            }
+            else if(vat.Transfer_Status__c == 'Submitted')
+            {
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                    /*if(IPCStatus == 'Valid')
+                    {
+                        if(vdf.Avail_for_Use_FT_TD__c + vdf.Avail_for_Use_FT_NTD__c <  vat.Transfer_Amount__c)
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {
+                            if(vdf.Avail_for_Use_FT_TD__c < vat.Transfer_Amount__c)
+                            {
+                                
+                                vat.Old_Value_TD__c = vdf.Avail_for_Use_FT_TD__c;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                                vat.Old_Value_NTD__c = vat.Transfer_Amount__c - vat.Old_Value_TD__c;
+                                vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                            }
+                            else
+                            {
+                                vat.Old_Value_TD__c = vat.Transfer_Amount__c;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                            }
+                        }                
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        if(vdf.Avail_for_Use_FT_NTD__c < vat.Transfer_Amount__c)
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {    
+                            vat.Old_Value_NTD__c = vat.Transfer_Amount__c;
+                            vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                            
+                        }
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                     */           
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        /*if(vdf.Avail_for_Use_PE_TD__c + vdf.Avail_for_Use_PE_NTD__c <  vat.Top_up_Amount__c )
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {*/
+                            if(vdf.Avail_for_Use_PE_TD__c < vat.Top_up_Amount__c )
+                            {
+                                vat.Old_Value_TD__c = vdf.Avail_for_Use_PE_TD__c;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                                vat.Old_Value_NTD__c = vat.Top_up_Amount__c  - vat.Old_Value_TD__c;
+                                vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                            }
+                            else
+                            {
+                                vat.Old_Value_TD__c = vat.Top_up_Amount__c ;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                            }
+                        //}                
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        /*if(vdf.Avail_for_Use_PE_NTD__c < vat.Top_up_Amount__c )
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {*/
+                            vat.Old_Value_NTD__c = vat.Top_up_Amount__c ;
+                            vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                        //}
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        /*if(vdf.Avail_for_Use_TE_TD__c + vdf.Avail_for_Use_TE_NTD__c <  vat.Top_up_Amount__c )
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {*/
+                            if(vdf.Avail_for_Use_TE_TD__c < vat.Top_up_Amount__c )
+                            {
+                                vat.Old_Value_TD__c = vdf.Avail_for_Use_TE_TD__c;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                                vat.Old_Value_NTD__c = vat.Top_up_Amount__c  - vat.Old_Value_TD__c;
+                                vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                            }
+                            else
+                            {
+                                vat.Old_Value_TD__c = vat.Top_up_Amount__c ;
+                                vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c + vat.Old_Value_TD__c;
+                            }
+                       // }                
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        /*if(vdf.Avail_for_Use_TE_NTD__c < vat.Top_up_Amount__c)
+                        {
+                            vat.addError('Available for Use is not enough');
+                        }
+                        else
+                        {*/
+                            vat.Old_Value_NTD__c = vdf.Hold_Amount_NTD__c;
+                            vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c + vat.Old_Value_NTD__c;
+                        //}
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                
+                }
+                //vof.Status__c = 'Pending Top-up Approval';
+                //update vof;
+                
+            }
+            else if(vat.Transfer_Status__c == 'Approved' && oldvat.Transfer_Status__c == 'Submitted')
+            {           
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                    /*if(vat.Tax_Deductible__c == true)
+                    {
+                    
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vof.VO_Amount_TD__c = vat.Old_Value_TD__c;
+                        vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c + vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c;
+                        
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c;
+                        
+                    }                
+                    
+                    vof.Status__c = 'Partially Disbursed';
+                    vof.Number_of_Disbursements__c = vof.Number_of_Disbursements__c + 1;
+                    update vdf;
+                    update vof;
+                        */        
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        //vof.VO_Amount_TD__c = vat.Old_Value_TD__c;
+                        //vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c + vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c + vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c + vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c; 
+                        
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        //vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c + vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c;
+                             
+                    }
+                    
+                    //vof.Status__c = 'Partially Disbursed';
+                    //vof.Number_of_Disbursements__c = vof.Number_of_Disbursements__c + 1;
+                    update vdf;
+                    //update vof;
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        //vof.VO_Amount_TD__c = vat.Old_Value_TD__c;
+                        //vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c + vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c + vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c + vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c; 
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        //vof.VO_Amount_NTD__c = vat.Old_Value_NTD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c + vat.Old_Value_NTD__c;
+                        
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c + vat.Old_Value_NTD__c; 
+                    }
+                    
+                    //vof.Status__c = 'Partially Disbursed';
+                    //vof.Number_of_Disbursements__c = vof.Number_of_Disbursements__c + 1;
+                    update vdf;
+                    //update vof;
+                
+                }    
+            
+            }
+            else if(vat.Transfer_Status__c == 'Draft' && oldvat.Transfer_Status__c == 'Submitted' )
+            {
+                
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                    /*if(IPCStatus == 'Valid')
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                     */           
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                
+                }
+                vat.Old_Value_TD__c = 0;
+                vat.Old_Value_NTD__c = 0;    
+            
+            }
+            else if(vat.Transfer_Status__c == 'Draft' && oldvat.Transfer_Status__c == 'Approved')
+            {
+                
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                    /*if(IPCStatus == 'Valid')
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c; 
+                        
+                        vat.Tax_Deductible__c = true;          
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vat.Tax_Deductible__c = false;     
+                    }
+                    
+                    update vdf;
+                    */            
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;  
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c - vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = true;         
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c; 
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;    
+                    }
+                    
+                    update vdf;
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c)
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;     
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c - vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = true;      
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;    
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false; 
+                    }
+                    
+                    update vdf;
+                
+                }
+                
+                vat.Old_Value_TD__c = 0;
+                vat.Old_Value_NTD__c = 0;    
+            
+            }
+            else if(vat.Transfer_Status__c == 'Rejected' && oldvat.Transfer_Status__c == 'Submitted' )
+            {
+                
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    vat.addError('Cannot create Top Up for Flow Through Pledge.');
+                    /*if(vat.Tax_Deductible__c == true)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                      */          
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {
+                        vdf.Hold_Amount_TD__c = vdf.Hold_Amount_TD__c - vat.Old_Value_TD__c;
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;      
+                        
+                        vat.Tax_Deductible__c = true;
+                    }
+                    else
+                    {
+                        vdf.Hold_Amount_NTD__c = vdf.Hold_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        
+                        vat.Tax_Deductible__c = false;
+                    }
+                    
+                    update vdf;
+                
+                }    
+                
+                vat.Old_Value_TD__c = 0;
+                vat.Old_Value_NTD__c = 0;
+            
+            }
+            else if(vat.Transfer_Status__c == 'Rejected' && oldvat.Transfer_Status__c == 'Approved')
+            {
+                
+                if(vdf.RecordType.Name == 'Flow Through Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c; 
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c - vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = true;          
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c; 
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;    
+                    }
+                    
+                    update vdf;
+                                
+                }
+                else if(vdf.RecordType.Name == 'Perpetual Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;  
+                        vdf.Grant_Top_Up_TD__c = vdf.Grant_Top_Up_TD__c - vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = true;         
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false;     
+                    }
+                    
+                    update vdf;
+                    
+                }
+                else if(vdf.RecordType.Name == 'Term Endowment Pledge')
+                {
+                    if(vat.Tax_Deductible__c == true)
+                    {                        
+                        vdf.Committed_Amount__c = vdf.Committed_Amount__c - vat.Old_Value_TD__c;
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;     
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_TD__c - vat.Old_Value_TD__c;
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = true;      
+                    }
+                    else
+                    {
+                        vdf.Committed_Amount_NTD__c = vdf.Committed_Amount_NTD__c - vat.Old_Value_NTD__c;    
+                        vdf.Grant_Top_Up_NTD__c = vdf.Grant_Top_Up_NTD__c - vat.Old_Value_NTD__c;
+                        vat.Tax_Deductible__c = false; 
+                    }
+                    
+                    update vdf;
+                
+                }
+                
+                vat.Old_Value_TD__c = 0;
+                vat.Old_Value_NTD__c = 0;    
+            
+            }
+        
+                   
+            
+            
+        }        
+    }
+}

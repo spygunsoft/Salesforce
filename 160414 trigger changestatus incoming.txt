@@ -1,0 +1,341 @@
+trigger ChangeStatus on Incoming_Funds__c (after update, after insert, before delete) {
+  if(trigger.isDelete){
+    IncomingFundClass.deleteIF(trigger.old);
+  }
+  else{
+    IncomingFundClass.cancelledIF(trigger.new);
+    IncomingFundClass.setCurrentFYDonation(trigger.new);
+    
+      for(Incoming_Funds__c vif : Trigger.new)
+      {
+          if(!vif.Migration_Flag__c){
+          Incoming_Funds__c oldvif;
+          Decimal SF = [Select Support_Fee__r.Actual_Fee__c From Incoming_Funds__c Where Name = :vif.Name].Support_Fee__r.Actual_Fee__c;
+          if(SF == NULL){SF = 0;}
+          
+          if(Trigger.isUpdate)
+          {
+              oldvif = Trigger.oldMap.get(vif.Id);
+              
+          }
+          else if(Trigger.isInsert)
+          {
+              oldvif = new Incoming_Funds__c();
+          }
+          
+          if(vif.RecordTypeId == [Select Id From RecordType
+                                  Where RecordType.Name ='Donations-FT' and SobjectType ='Incoming_Funds__c'
+                                  limit 1].Id
+                                  ||
+                                  vif.RecordTypeId == [Select Id From RecordType
+                                  Where RecordType.Name ='Donations-Endowment' and SobjectType ='Incoming_Funds__c'
+                                  limit 1].Id
+                                  )
+          {
+              Donor_Fund__c vdf = [Select Fund_Amount_TD__c, Fund_Amount_NTD__c, Total_Donations__c, RecordType.Name,
+                                   Support_Fee_Paid__c,Total_Support_Fee_Waived__c
+                                   From Donor_Fund__c
+                                   Where Donor_Fund__c.Id = :vif.Donor_Fund__c]; 
+                                                          
+              if(vdf.Fund_Amount_TD__c == NULL){vdf.Fund_Amount_TD__c = 0;}
+              if(vdf.Fund_Amount_NTD__c == NULL){vdf.Fund_Amount_NTD__c = 0;}
+              if(vdf.Total_Donations__c == NULL){vdf.Total_Donations__c = 0;}
+              if(vdf.Support_Fee_Paid__c == null){vdf.Support_Fee_Paid__c = 0;}
+              if(vdf.Total_Support_Fee_Waived__c == null){vdf.Total_Support_Fee_Waived__c = 0;}
+              
+              Outgoing_Funds__c vof;
+              
+              if(vdf.RecordType.Name == 'Flow Through Pledge')
+              {
+                  if(Trigger.isUpdate)
+                  {
+                      vof = [Select Payment_Status__c,Support_Fee_Status__c, Actual_Fee__c, Support_Fee_Waiver__c From Outgoing_Funds__c 
+                                       Where Id = :vif.Support_Fee__c];
+                  }
+              }
+              
+              
+              if(oldvif.Status__c != 'Cleared' && vif.Status__c == 'Cleared')
+              {                    
+                                           
+                  if(vif.Tax_Deductible__c == true)
+                  {
+                      if(vif.Fee_Source__c == 'Paid Separately')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                              //vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c + SF;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                              
+                              /*vof.Payment_Status__c = 'Unpaid';
+                              vof.Support_Fee_Status__c = 'Draft';
+                              update vof;*/
+                              //if(vof.Support_Fee_Status__c == 'Approved' && (vof.Payment_Status__c == 'Paid' || vof.Payment_Status__c == 'Waived'))
+                              //{    
+                                  vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                                  vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                               /*   if(vof.Support_Fee_Waiver__c == 'Ad hoc')
+                                  {
+                                    vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                                      
+                                  }
+                                  else
+                                  {
+                                      vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                                      vdf.Total_Donations__c = vdf.Total_Donations__c + vof.Actual_Fee__c;
+                                  }
+                             // }
+                              /*else
+                              {
+                                  vif.addError('Support Fee Should Be Approved And Paid/Waived Before Status Becomes Cleared');
+                              }
+                              
+                              
+                              */
+                          }
+                      }
+                      else if(vif.Fee_Source__c == 'From Donation')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              /*vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c - SF;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c - SF;*/
+                              //vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c - SF;
+                              vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                            vof.Cleared_Date__c = vif.Cleared_Date__c;
+                            vof.Fee_Source__c = 'From Donation';
+                              vof.Support_Fee_Status__c = 'Approved';
+                              update vof;
+                              
+                              vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                              vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                              //vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vof.Actual_Fee__c;
+                              /*Outgoing_Funds__c vof = [Select Payment_Status__c,Support_Fee_Status__c, Support_Fee_Waiver__c From Outgoing_Funds__c 
+                                           Where Id = :vif.Support_Fee__c];
+                              vof.Payment_Status__c = 'Paid';
+                              vof.Support_Fee_Status__c = 'Approved';
+                              update vof;*/
+                              /*if(vof.Support_Fee_Status__c == 'Approved' && (vof.Payment_Status__c == 'Paid' || vof.Payment_Status__c == 'Waived'))
+                              {    
+                                  vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                                  vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                                  if(vof.Payment_Status__c == 'Paid')
+                                  {
+                                      vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                                      vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vof.Actual_Fee__c;
+                                  }
+                                  else if(vof.Payment_Status__c == 'Waived')
+                                  {
+                                      vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                                  }
+                              }
+                              else
+                              {
+                                  vif.addError('Support Fee Should Be Approved And Paid/Waived Before Status Becomes Cleared');
+                              }*/
+                          }
+                      }
+                      else if(vif.Fee_Source__c == 'Not Applicable')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                              vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;   
+                              vof.Payment_Status__c = 'Waived';
+                              vof.Support_Fee_Status__c = 'Approved';
+                              vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                              update vof;
+                          }
+                      }
+                  }
+                  else if(vif.Tax_Deductible__c == false)
+                  {
+                      if(vif.Fee_Source__c == 'Paid Separately')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                              //vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c + SF;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                              /*Outgoing_Funds__c vof = [Select Payment_Status__c,Support_Fee_Status__c, Support_Fee_Waiver__c From Outgoing_Funds__c 
+                                           Where Id = :vif.Support_Fee__c];
+                              vof.Payment_Status__c = 'Unpaid';
+                              vof.Support_Fee_Status__c = 'Draft';
+                              update vof;*/
+                              //if(vof.Support_Fee_Status__c == 'Approved' && (vof.Payment_Status__c == 'Paid' || vof.Payment_Status__c == 'Waived'))
+                              //{    
+                                  vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                                  vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                                  /*if(vof.Payment_Status__c == 'Paid')
+                                  {
+                                      vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                                      vdf.Total_Donations__c = vdf.Total_Donations__c + vof.Actual_Fee__c;
+                                  }
+                                  else if(vof.Payment_Status__c == 'Waived')
+                                  {
+                                      vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                                  }*/
+                                  
+                              /*}
+                              else
+                              {
+                                  vif.addError('Support Fee Should Be Approved And Paid/Waived Before Status Becomes Cleared');
+                              }
+                              */
+                          }               
+                      }
+                      else if(vif.Fee_Source__c == 'From Donation')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              /*vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c - SF;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c - SF;*/
+                              //vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c - SF;
+                              vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                              /*Outgoing_Funds__c vof = [Select Payment_Status__c,Support_Fee_Status__c, Support_Fee_Waiver__c From Outgoing_Funds__c 
+                                           Where Id = :vif.Support_Fee__c];
+                              vof.Payment_Status__c = 'Paid';
+                              vof.Support_Fee_Status__c = 'Approved';
+                              update vof;*/
+                              vof.Cleared_Date__c = vif.Cleared_Date__c;
+                              vof.Support_Fee_Status__c = 'Approved';
+                              vof.Fee_Source__c = 'From Donation';
+                              update vof;
+                              
+                              vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                             
+                              vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                              //vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vof.Actual_Fee__c;
+                                 
+                              /*if(vof.Support_Fee_Status__c == 'Approved' && (vof.Payment_Status__c == 'Paid' || vof.Payment_Status__c == 'Waived'))
+                              {    
+                                  vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                                  vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                                  if(vof.Payment_Status__c == 'Paid')
+                                  {
+                                      vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c + vof.Actual_Fee__c;
+                                      vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vof.Actual_Fee__c;
+                                  }
+                                  else if(vof.Payment_Status__c == 'Waived')
+                                  {
+                                      vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                                  }
+                              }
+                              else
+                              {
+                                  vif.addError('Support Fee Should Be Approved And Paid/Waived Before Status Becomes Cleared');
+                              }
+                              */
+                          }
+                      }
+                      else if(vif.Fee_Source__c == 'Not Applicable')
+                      {
+                          if(vdf.RecordType.Name == 'Perpetual Endowment Pledge' || vdf.RecordType.Name == 'Term Endowment Pledge')
+                          {
+                              vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                          }
+                          else if(vdf.RecordType.Name == 'Flow Through Pledge')
+                          {
+                              vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;
+                              vdf.Total_Donations__c = vdf.Total_Donations__c + vif.Received_Amount__c;
+                              vof.Payment_Status__c = 'Waived';
+                              vof.Support_Fee_Status__c = 'Approved';
+                              vdf.Total_Support_Fee_Waived__c = vdf.Total_Support_Fee_Waived__c + vof.Actual_Fee__c;
+                              update vof;
+                          }
+                      }
+                  }
+                  
+                  
+              }
+              else if(oldvif.Status__c == 'Cleared' && vif.Status__c != 'Cleared')
+              {
+                  if(vif.Tax_Deductible__c == true)
+                  {
+                      if(vif.Fee_Source__c == 'Paid Separately')
+                      {
+                          vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vif.Received_Amount__c;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;
+                      }
+                      
+                      else if(vif.Fee_Source__c == 'From Donation')
+                      {
+                          vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vif.Received_Amount__c;// + SF;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;// + SF;
+                          vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c - SF;
+                          
+                      }
+                      
+                      
+                      else if(vif.Fee_Source__c == 'Not Applicable')
+                      {
+                          vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vif.Received_Amount__c;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;
+                      }        
+                  }
+                  else if(vif.Tax_Deductible__c == false)
+                  {
+                      if(vif.Fee_Source__c == 'Paid Separately')
+                      {
+                          vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vif.Received_Amount__c;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;                
+                      }
+                      // old logic, got error when revert transaction
+                      else if(vif.Fee_Source__c == 'From Donation')
+                      {
+                          vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vif.Received_Amount__c;// + SF;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;// + SF;
+                          vdf.Support_Fee_Paid__c = vdf.Support_Fee_Paid__c - SF;
+                      }
+                       
+                      
+                      /* new Logic by EY
+                      else if(vif.Fee_Source__c == 'From Donation')
+                      {
+                          vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + SF;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c + SF;
+                      
+                          vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vif.Received_Amount__c;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;
+                          
+                          
+                      }
+                      */
+                      
+                      else if(vif.Fee_Source__c == 'Not Applicable')
+                      {
+                          vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vif.Received_Amount__c;
+                          vdf.Total_Donations__c = vdf.Total_Donations__c - vif.Received_Amount__c;
+                      }
+                  }
+              }
+              
+              update vdf;
+          }
+          }
+      }
+    }
+}

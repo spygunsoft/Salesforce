@@ -1,0 +1,54 @@
+trigger ChangeStatus on Incoming_Funds__c (before update, before insert) {
+
+    for(Incoming_Funds__c vif : Trigger.new)
+    {
+        Incoming_Funds__c oldvif;
+        
+        if(Trigger.isUpdate)
+        {
+            oldvif = Trigger.oldMap.get(vif.Id);
+        }
+        else if(Trigger.isInsert)
+        {
+            oldvif = new Incoming_Funds__c();
+        }
+        
+        if(vif.RecordTypeId == [Select Id From RecordType
+                                Where RecordType.Name ='Donations' and SobjectType ='Incoming_Funds__c'
+                                limit 1].Id)
+        {
+            Donor_Fund__c vdf = [Select Fund_Amount_TD__c, Fund_Amount_NTD__c 
+                                 From Donor_Fund__c
+                                 Where Donor_Fund__c.Id = :vif.Donor_Fund__c]; 
+                                                        
+            if(oldvif.Cleared_Date__c == NULL && vif.Cleared_Date__c != NULL)
+            {
+                vif.Status__c = 'Cleared';
+                if(vif.Tax_Deductible__c == true)
+                {
+                    vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c + vif.Received_Amount__c;
+                }
+                else if(vif.Tax_Deductible__c == false)
+                {
+                    vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c + vif.Received_Amount__c;                
+                }
+            }
+            else if(oldvif.Cleared_Date__c != NULL && vif.Cleared_Date__c == NULL)
+            {
+                vif.Status__c = 'Received';
+                if(vif.Tax_Deductible__c == true)
+                {
+                    vdf.Fund_Amount_TD__c = vdf.Fund_Amount_TD__c - vif.Received_Amount__c;
+                }
+                else if(vif.Tax_Deductible__c == false)
+                {
+                    vdf.Fund_Amount_NTD__c = vdf.Fund_Amount_NTD__c - vif.Received_Amount__c;                
+                }
+            }
+            
+            update vdf;
+        }
+    
+    }
+
+}

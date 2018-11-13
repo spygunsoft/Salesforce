@@ -1,0 +1,331 @@
+public class AdjustmentClass {
+    
+    public static void createDisbursement(List<Adjustment_Transfer__c> newList, Map<Id,Adjustment_Transfer__c> oldMap){
+       /* RecordType TopUp = [SELECT Id, Name, SobjectType FROM RecordType WHERE Name = 'Top-Up' AND SobjectType = 'Adjustment_Transfer__c' limit 1];
+        List<Disbursement__c> disbList = new List<Disbursement__c>();
+        for(Adjustment_Transfer__c adj : newList){
+            system.debug('Statement1 ========'+adj.Adjustment_Status__c != oldMap.get(adj.Id).Adjustment_Status__c);
+            system.debug('Statement2 ========'+adj.Adjustment_Status__c == 'Approved');
+            //system.debug('Statement3 ========'+adj.RecordTypeId == TopUp.Id);
+            if(adj.Transfer_Status__c != oldMap.get(adj.Id).Transfer_Status__c && adj.Transfer_Status__c == 'Approved' && adj.RecordTypeId == TopUp.Id){
+                Disbursement__c d = new Disbursement__c();
+                d.Disubrsed_Amt__c = adj.Transfer_Amount__c;
+                d.Adjustment_Transfer__c = adj.Id;
+                d.Outgoing_Funds__c = adj.OF_No__c;
+                d.Pledge_Name__c = adj.Pledge_Name__c;
+                d.Programme__c = adj.Programme__c;
+                d.Status__c = 'Planned';
+                disbList.add(d);
+                system.debug('Disbursement ======== '+d);
+            }
+        }
+        system.debug('DisbList ======== '+disbList);
+        if(disbList.size() > 0){
+            insert(disbList);
+        }
+        */
+    }
+    
+    
+    Map<Id, RecordType> rtMap;
+    RecordType trfRT;
+    Set<Id> dfIds;
+    Map<Id, Donor_Fund__c> dfMap;
+    
+    public AdjustmentClass(String RT, List<Adjustment_Transfer__c> newList){
+        if(RT == 'Transfer Management'){
+             trfRT = [SELECT Id, Name, SobjectType FROM RecordType WHERE Name = 'Transfer Management' AND SobjectType = 'Adjustment_Transfer__c' limit 1];
+            
+            Set<Id> dfIds = new Set<Id>();
+            for(Adjustment_Transfer__c trf : newList){
+                if(trf.RecordTypeId == trfRT.Id){
+                    dfIds.add(trf.Transfer_From__c);
+                    dfIds.add(trf.Transfer_To__c);
+                }
+            }
+            if(dfIds != null){
+                dfMap = new Map<Id, Donor_Fund__c>(
+                                    [SELECT Id, Name, RecordType.Name, Start_Date_TE__c,End_Date_TE__c,
+                                            Total_Transferred_in__c,
+                                            Total_Transferred_out__c,
+                                            Hold_Amount_TD__c,
+                                             Avail_for_Use_FT_TD__c,
+                                             Avail_for_Use_PE_TD__c,
+                                             Avail_for_Use_TE_TD__c,
+                                            Fund_Amount_TD__c,
+                                            Transferred_in_TD_Inter__c,
+                                            Hold_Amount_NTD__c,
+                                             Avail_for_Use_FT_NTD__c,
+                                             Avail_for_Use_PE_NTD__c,
+                                             Avail_for_Use_TE_NTD__c,
+                                            Fund_Amount_NTD__c,
+                                            Total_Transferred_in_NTD__c,
+                                            Total_Transferred_out_NTD__c,
+                                            Transferred_in_NTD_Inter__c
+                                     FROM Donor_Fund__c WHERE Id IN :dfIds]);
+            }
+        }
+        else if(RT == 'Top-up'){
+            trfRT = [SELECT Id, Name, SobjectType FROM RecordType WHERE Name = 'Top-up' AND SobjectType = 'Adjustment_Transfer__c' limit 1];
+            
+            Set<Id> dfIds = new Set<Id>();
+            for(Adjustment_Transfer__c trf : newList){
+                if(trf.RecordTypeId == trfRT.Id){
+                    dfIds.add(trf.Pledge_Name__c);
+                }
+            }
+            if(dfIds != null){
+                dfMap = new Map<Id, Donor_Fund__c>(
+                                    [SELECT Id, Name, RecordType.Name, Start_Date_TE__c,End_Date_TE__c,
+                                            Hold_Amount_TD__c,
+                                             Avail_for_Use_FT_TD__c,
+                                             Avail_for_Use_PE_TD__c,
+                                             Avail_for_Use_TE_TD__c,
+                                            Fund_Amount_TD__c,
+                                            Hold_Amount_NTD__c,
+                                             Avail_for_Use_FT_NTD__c,
+                                             Avail_for_Use_PE_NTD__c,
+                                             Avail_for_Use_TE_NTD__c,
+                                            Fund_Amount_NTD__c
+                                     FROM Donor_Fund__c WHERE Id IN :dfIds]);
+            }
+        }
+    }
+    /*class to handle transfer checkTransferAmount(List<Adjustment_Transfer__c> newList)
+        * When status Draft, check Available for Used
+    */
+    public void checkTransferAmount(List<Adjustment_Transfer__c> newList){
+        if(dfMap != null){
+            for(Adjustment_Transfer__c trf : newList){
+                if(trf.RecordTypeId == trfRT.Id){
+                Donor_Fund__c donorFrom = dfMap.get(trf.Transfer_From__c);
+                Donor_Fund__c donorTo = dfMap.get(trf.Transfer_To__c);
+                if(trf.Transfer_Status__c == 'Submitted'){ 
+                if(trf.Tax_Deductible__c == true){
+                    if(donorFrom.Hold_Amount_TD__c == null){
+                        donorFrom.Hold_Amount_TD__c = 0;
+                    }
+                
+                    DateTime startDate;
+                    DateTime endDate;
+                
+                    if(donorFrom.RecordType.Name == 'Perpetual Endowment Pledge' && donorFrom.Avail_for_Use_PE_TD__c < trf.Transfer_Amount__c){
+                        trf.addError('Available For Use is not enough');
+                    } 
+                    else if(donorFrom.RecordType.Name == 'Term Endowment Pledge' && donorFrom.Avail_for_Use_TE_TD__c < trf.Transfer_Amount__c){
+                        if(date.today() < donorTo.Start_Date_TE__c || date.today() > donorTo.End_Date_TE__c){
+                            startDate = donorTo.Start_Date_TE__c;
+                            endDate = donorTo.End_Date_TE__c;
+                            trf.addError('Transfer can only be made within the period ' + startDate.format('dd/MM/yyyy') + ' and ' + endDate.format('dd/MM/yyyy'));
+                        }
+                        else{
+                            trf.addError('Available For Use is not enough');
+                        }
+                    }
+                    else if(donorFrom.RecordType.Name == 'Flow Through Pledge' && donorFrom.Avail_for_Use_FT_TD__c < trf.Transfer_Amount__c){
+                        trf.addError('Available For Use is not enough');
+                    }
+                }else if(trf.Tax_Deductible__c == false){
+                    if(donorFrom.Hold_Amount_NTD__c == null){
+                        donorFrom.Hold_Amount_NTD__c = 0;
+                    }
+                
+                    DateTime startDate;
+                    DateTime endDate;
+                
+                    if(donorFrom.RecordType.Name == 'Perpetual Endowment Pledge' && donorFrom.Avail_for_Use_PE_NTD__c < trf.Transfer_Amount__c){
+                        trf.addError('Available For Use is not enough');
+                    } 
+                    else if(donorFrom.RecordType.Name == 'Term Endowment Pledge' && donorFrom.Avail_for_Use_TE_NTD__c < trf.Transfer_Amount__c){
+                        if(date.today() < donorTo.Start_Date_TE__c || date.today() > donorTo.End_Date_TE__c){
+                            startDate = donorTo.Start_Date_TE__c;
+                            endDate = donorTo.End_Date_TE__c;
+                            trf.addError('Transfer can only be made within the period ' + startDate.format('dd/MM/yyyy') + ' and ' + endDate.format('dd/MM/yyyy'));
+                        }
+                        else{
+                            trf.addError('Available For Use is not enough');
+                        }
+                    }
+                    else if(donorFrom.RecordType.Name == 'Flow Through Pledge' && donorFrom.Avail_for_Use_FT_NTD__c < trf.Transfer_Amount__c){
+                        trf.addError('Available For Use is not enough');
+                    }
+                } 
+                }
+                }           
+            }
+        }
+    }
+    /*class to handle transfer checkTopUpAmount(List<Adjustment_Transfer__c> newList)
+        * When status Draft, check Available for Used
+    */
+    public void checkTopUpRT(List<Adjustment_Transfer__c> newList){
+        if(dfMap !=null){
+            for(Adjustment_Transfer__c trf : newList){
+                if(trf.RecordTypeId == trfRT.Id){
+                    Donor_Fund__c donorFund = dfMap.get(trf.Pledge_Name__c); 
+                    if(donorFund.RecordType.Name == 'Flow Through Pledge'){
+                        trf.addError('Cannot create Top Up for Flow Through Pledge.');
+                    }
+                }
+            }
+        }    
+    }
+    
+    public void setTopUpAmount(List<Adjustment_Transfer__c> newList, Map<Id,Adjustment_Transfer__c> oldMap){
+        if(dfMap != null){
+            for(Adjustment_Transfer__c trf : newList){
+                Adjustment_Transfer__c oldTfr = oldMap == null? null : oldMap.get(trf.Id);
+                if(trf.RecordTypeId == trfRT.Id){
+                    Donor_Fund__c donorFund = dfMap.get(trf.Pledge_Name__c);
+                    if(donorFund.RecordType.Name == 'Perpetual Endowment Pledge'){
+                        if(trf.Tax_Deductible__c == TRUE){
+                            if(trf.Transfer_Status__c == 'Submitted' && oldTfr.Transfer_Status__c != 'Submitted'){
+                                if(donorFund.Avail_for_Use_PE_TD__c < trf.Top_up_Amount__c )
+                                {
+                                    trf.Old_Value_TD__c = donorFund.Avail_for_Use_PE_TD__c;
+                                    donorFund.Hold_Amount_TD__c = donorFund.Hold_Amount_TD__c + trf.Old_Value_TD__c;
+                                    trf.Old_Value_NTD__c = trf.Top_up_Amount__c  - trf.Old_Value_TD__c;
+                                    donorFund.Hold_Amount_NTD__c = donorFund.Hold_Amount_NTD__c + trf.Old_Value_NTD__c;
+                                }
+                                else
+                                {
+                                    trf.Old_Value_TD__c = trf.Top_up_Amount__c ;
+                                    donorFund.Hold_Amount_TD__c = donorFund.Hold_Amount_TD__c + trf.Old_Value_TD__c;
+                                }
+                            }
+                            if(trf.Transfer_Status__c != 'Submitted' && oldTfr.Transfer_Status__c == 'Submitted'){
+                                donorFund.Hold_Amount_TD__c = donorFund.Hold_Amount_TD__c - trf.Old_Value_TD__c;
+                            }
+                        }                        
+                    }
+                    if(donorFund.RecordType.Name == 'Term Endowment Pledge'){
+                        if(trf.Tax_Deductible__c == TRUE){
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /*class to handle transfersetTransferAmount(List<Adjustment_Transfer__c> newList, Map<Id,Adjustment_Transfer__c> oldMap)
+        * When status Draft, check Available for Used
+        * when status submitted, set hold amount with (-) transfer amount in (From DF)
+        * when status approved, still hold the amount (From DF)
+        * when it cleared than set transfer out to transfer amount and hold amount (+) transfer amount (From DF)
+            and set transfer in to transfer amount (To DF)
+                                        
+    */
+    public void setTransferAmount(List<Adjustment_Transfer__c> newList, Map<Id,Adjustment_Transfer__c> oldMap){
+        
+        if(dfMap != null){
+            for(Adjustment_Transfer__c trf : newList){
+                Donor_Fund__c donorFrom = dfMap.get(trf.Transfer_From__c);
+                Donor_Fund__c donorTo = dfMap.get(trf.Transfer_To__c);
+                Adjustment_Transfer__c oldTfr = oldMap == null? null : oldMap.get(trf.Id); 
+                if(trf.RecordTypeId == trfRT.Id){
+                if((trf.Transfer_Status__c == 'Submitted' && oldTfr.Transfer_Status__c != 'Submitted')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Hold_Amount_TD__c = donorFrom.Hold_Amount_TD__c == null ? 0 :  donorFrom.Hold_Amount_TD__c + trf.Transfer_Amount__c;
+                    }else{
+                        donorFrom.Hold_Amount_NTD__c = donorFrom.Hold_Amount_NTD__c == null ? 0 :  donorFrom.Hold_Amount_NTD__c + trf.Transfer_Amount__c;
+                    }
+                }
+                
+                if((trf.Transfer_Status__c != 'Submitted' && oldTfr.Transfer_Status__c == 'Submitted')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Hold_Amount_TD__c = donorFrom.Hold_Amount_TD__c == null ? 0 :  donorFrom.Hold_Amount_TD__c - trf.Transfer_Amount__c;
+                    }else{
+                        donorFrom.Hold_Amount_NTD__c = donorFrom.Hold_Amount_NTD__c == null ? 0 :  donorFrom.Hold_Amount_NTD__c - trf.Transfer_Amount__c;
+                    }
+                }
+                
+                if((trf.Transfer_Status__c == 'Approved' && oldTfr.Transfer_Status__c != 'Approved')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Hold_Amount_TD__c = donorFrom.Hold_Amount_TD__c == null ? 0 :  donorFrom.Hold_Amount_TD__c + trf.Transfer_Amount__c;
+                    }else{
+                        donorFrom.Hold_Amount_NTD__c = donorFrom.Hold_Amount_NTD__c == null ? 0 :  donorFrom.Hold_Amount_NTD__c + trf.Transfer_Amount__c;
+                    }
+                }
+                
+                if((trf.Transfer_Status__c != 'Approved' && oldTfr.Transfer_Status__c == 'Approved')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Hold_Amount_TD__c = donorFrom.Hold_Amount_TD__c == null ? 0 :  donorFrom.Hold_Amount_TD__c - trf.Transfer_Amount__c;
+                    }else{
+                        donorFrom.Hold_Amount_NTD__c = donorFrom.Hold_Amount_NTD__c == null ? 0 :  donorFrom.Hold_Amount_NTD__c - trf.Transfer_Amount__c;
+                    }
+                }
+                
+                if((trf.Transfer_Status__c == 'Cleared' && oldTfr.Transfer_Status__c != 'Cleared')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Total_Transferred_out__c = (donorFrom.Total_Transferred_out__c == null ? 0 : donorFrom.Total_Transferred_out__c) + trf.Transfer_Amount__c;
+                        donorTo.Total_Transferred_in__c = (donorTo.Total_Transferred_in__c == null ? 0 : donorTo.Total_Transferred_in__c) + trf.Transfer_Amount__c;
+                        
+                        if(trf.Transfer_Effect__c == 'Add To Curr Fund Bal'){                            
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c + trf.Transfer_Amount__c;}//das
+                            else{donorto.Transferred_in_TD_Inter__c = donorto.Transferred_in_TD_Inter__c == null ? 0 : donorto.Transferred_in_TD_Inter__c + trf.Transfer_Amount__c;}
+                        }else{
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c + trf.Transfer_Amount__c;}//das
+                            else{donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c + trf.Transfer_Amount__c;}
+                        }
+                    }else{
+                        donorFrom.Total_Transferred_out_NTD__c = (donorFrom.Total_Transferred_out_NTD__c == null?0:donorFrom.Total_Transferred_out_NTD__c) + trf.Transfer_Amount__c;
+                        donorTo.Total_Transferred_in_NTD__c = (donorTo.Total_Transferred_in_NTD__c == null ? 0 : donorTo.Total_Transferred_in_NTD__c) + trf.Transfer_Amount__c;
+                        
+                        if(trf.Transfer_Effect__c == 'Add To Curr Fund Bal'){
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c + trf.Transfer_Amount__c;}//das
+                            else{donorto.Transferred_in_NTD_Inter__c = donorto.Transferred_in_NTD_Inter__c == null ? 0 : donorto.Transferred_in_NTD_Inter__c + trf.Transfer_Amount__c;}
+                            //donorTo.Transferred_in_NTD_Inter__c = donorTo.Transferred_in_NTD_Inter__c == null ? 0 : donorTo.Transferred_in_NTD_Inter__c + trf.Transfer_Amount__c;
+                        }else{
+                            //donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c + trf.Transfer_Amount__c;
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c + trf.Transfer_Amount__c;}//das
+                            else{donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c + trf.Transfer_Amount__c;}
+                        }
+                    }
+                }
+                if((trf.Transfer_Status__c != 'Cleared' && oldTfr.Transfer_Status__c == 'Cleared')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Total_Transferred_out__c = (donorFrom.Total_Transferred_out__c == null?0:donorFrom.Total_Transferred_out__c) - trf.Transfer_Amount__c;
+                        donorTo.Total_Transferred_in__c = (donorTo.Total_Transferred_in__c == null ? 0 : donorTo.Total_Transferred_in__c) - trf.Transfer_Amount__c;
+                        
+                        if(trf.Transfer_Effect__c == 'Add To Curr Fund Bal'){                            
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c - trf.Transfer_Amount__c;}//das
+                            else{donorto.Transferred_in_TD_Inter__c = donorto.Transferred_in_TD_Inter__c == null ? 0 : donorto.Transferred_in_TD_Inter__c - trf.Transfer_Amount__c;}
+                        }else{
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c - trf.Transfer_Amount__c;}//das
+                            else{donorTo.Fund_Amount_TD__c = donorTo.Fund_Amount_TD__c == null ? 0 : donorTo.Fund_Amount_TD__c - trf.Transfer_Amount__c;}
+                        }
+                    }else{
+                        donorFrom.Total_Transferred_out_NTD__c = (donorFrom.Total_Transferred_out_NTD__c == null?0:donorFrom.Total_Transferred_out_NTD__c) - trf.Transfer_Amount__c;
+                        donorTo.Total_Transferred_in_NTD__c = (donorTo.Total_Transferred_in_NTD__c == null ? 0 : donorTo.Total_Transferred_in_NTD__c) - trf.Transfer_Amount__c;
+                        
+                        if(trf.Transfer_Effect__c == 'Add To Curr Fund Bal'){
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c - trf.Transfer_Amount__c;}//das
+                            else{donorto.Transferred_in_NTD_Inter__c = donorto.Transferred_in_NTD_Inter__c == null ? 0 : donorto.Transferred_in_NTD_Inter__c - trf.Transfer_Amount__c;}
+                            //donorTo.Transferred_in_NTD_Inter__c = donorTo.Transferred_in_NTD_Inter__c == null ? 0 : donorTo.Transferred_in_NTD_Inter__c - trf.Transfer_Amount__c;
+                        }else{
+                            //donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c - trf.Transfer_Amount__c;
+                            if(donorto.RecordType.Name == 'Flow Through Pledge'){donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c - trf.Transfer_Amount__c;}//das
+                            else{donorTo.Fund_Amount_NTD__c = donorTo.Fund_Amount_NTD__c == null ? 0 : donorTo.Fund_Amount_NTD__c - trf.Transfer_Amount__c;}
+                        }
+                    }
+                }
+                /*
+                if((trf.Transfer_Status__c == 'Rejected' && oldTfr.Transfer_Status__c == 'Approved')){
+                    trf.addError('Transfer already approved cannot rejected');
+                }
+                if((trf.Transfer_Status__c != 'Rejected' && oldTfr.Transfer_Status__c == 'Rejected')){
+                    trf.addError('Transfer Rejected, cannot change to other status');
+                }
+                if((trf.Transfer_Status__c == 'Rejected' && oldTfr.Transfer_Status__c != 'Rejected')){
+                    if(trf.Tax_Deductible__c == true){
+                        donorFrom.Hold_Amount_TD__c = donorFrom.Hold_Amount_TD__c == null ? 0 :  donorFrom.Hold_Amount_TD__c - trf.Transfer_Amount__c;
+                    }else{
+                        donorFrom.Hold_Amount_NTD__c = donorFrom.Hold_Amount_NTD__c == null ? 0 :  donorFrom.Hold_Amount_NTD__c - trf.Transfer_Amount__c;
+                    }
+                }
+                */
+                }
+            }
+            update(dfMap.values());
+        }
+    }
+}
